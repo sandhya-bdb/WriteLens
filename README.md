@@ -5,6 +5,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agent-purple)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
 ![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 StealthText is an AI text humanizer that uses a **LangGraph agent loop** to rewrite AI-generated text until it bypasses detection. 
 
@@ -20,6 +21,29 @@ Instead of simple prompt-wrapping, StealthText uses a closed-loop system:
 - **📈 Score Trend Charts:** Visualizes perplexity and burstiness improvements iteration-by-iteration using a real-time line chart.
 - **📋 Copy to Clipboard:** Integrated clipboard utility on the humanized output panel with visual success notifications.
 - **🛡️ Hybrid Verification (GPTZero Client):** Supports optional validation against commercial detectors, utilizing local GPT-2 pre-screening to conserve API credits.
+- **🐳 Docker-First Deployment:** Fully containerized with `docker-compose` — backend, frontend, and model cache volumes pre-configured.
+- **✅ 50-Test Offline Suite:** Comprehensive `pytest` suite mocking LLM and GPT-2 so tests run instantly with no API keys or GPU.
+
+## 🎬 Demo
+
+> **How it works:** Paste any AI-generated text → select your tone → watch the agent loop rewrite and score in real time until it reads as human.
+
+| Step | What happens |
+|---|---|
+| 1. Input | You paste AI-generated text and choose a tone (Casual or Professional) |
+| 2. Detect | Local GPT-2 scores the text for Perplexity & Burstiness |
+| 3. Rewrite | Groq Llama 3.3 70B rewrites the text toward the target tone |
+| 4. Loop | Scores are charted live — loop continues until text passes or hits max iterations |
+| 5. Output | Final humanized text is ready to copy with one click |
+
+## 🤖 Custom Model Fine-Tuning (QLoRA)
+
+In addition to using zero-shot prompting with Groq Llama 3.3 70B, StealthText includes a dedicated fine-tuning engine to train specialized open-source models:
+
+- **Base Model:** `Qwen/Qwen2.5-3B-Instruct`
+- **Methodology:** Parameter-Efficient Fine-Tuning (QLoRA 4-bit quantization) using Hugging Face `SFTTrainer` on the `Hello-SimpleAI/HC3` human-AI dataset.
+- **Performance:** Achieved an **evaluation loss of 1.262**, yielding a compact ~60 MB adapter tailored specifically for bypassing AI detectors.
+- **Repository:** Code, dataset scripts, and training pipeline are available in the companion project **[StealthText-FineTuning](https://github.com/sandhya-bdb/finetuned-stealthtext)**.
 
 ## 🏗 Architecture
 
@@ -103,3 +127,11 @@ This project is built as a production-ready MVP with a decoupled architecture. W
 - **Stateful UI (Streamlit) → Stateless UI (Next.js):** Streamlit maintains a persistent WebSocket connection and server-side state for every user. For planet-scale traffic, the frontend would be rewritten in React/Next.js to use stateless REST/GraphQL calls.
 - **Local Model (GPT-2) → Dedicated Inference Server (vLLM):** Currently, the GPT-2 model is loaded into the FastAPI worker memory (CPU). At scale, the model would be decoupled into a dedicated GPU inference server (like vLLM or Triton) to prevent the web server from being CPU/RAM bottlenecked.
 - **API Rate Limiting (Groq):** To handle high concurrency without hitting Groq's RPM (Requests Per Minute) limits, a router like LiteLLM would be introduced to automatically fall back to secondary providers (like OpenAI or Anthropic) with exponential backoff and retry logic.
+
+## 🤝 Contributing
+
+Pull requests are welcome! For major changes, please open an issue first to discuss what you'd like to change. Please make sure to update tests accordingly.
+
+## 📄 License
+
+This project is licensed under the [MIT License](./LICENSE).
