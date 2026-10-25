@@ -1,0 +1,20 @@
+{
+  "base_model": "Qwen/Qwen2.5-0.5B",
+  "method": "QLoRA (4-bit NF4, LoRA r=16)",
+  "train_examples": 4000,
+  "val_examples": 400,
+  "epochs": 1.0,
+  "learning_rate": 0.0002,
+  "max_length": 256,
+  "heldout_eval_texts": 400,
+  "validation": {
+    "eval_loss": 0.0097,
+    "eval_accuracy": 0.995,
+    "eval_recall": 1.0,
+    "eval_false_positive_rate": 0.01,
+    "eval_runtime": 8.5227,
+    "eval_samples_per_second": 46.934,
+    "eval_steps_per_second": 5.867,
+    "epoch": 1.0
+  }
+}
