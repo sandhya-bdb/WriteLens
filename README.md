@@ -109,6 +109,7 @@ Run it in Colab with [`notebooks/finetune_and_evaluate.ipynb`](notebooks/finetun
 
 ```bash
 pip install -r requirements-train.txt
+pip uninstall -y torchao   # only if an old torchao is installed (e.g. Colab)
 python training/finetune_detector.py --per-class 2000 --epochs 1
 python scripts/evaluate.py --model finetuned
 ```
