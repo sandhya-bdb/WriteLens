@@ -30,3 +30,6 @@ htmlcov/
 .DS_Store
 *.swp
 *~
+
+# ── Fine-tuned adapters (share via Hugging Face Hub or a release, not git) ──
+models/

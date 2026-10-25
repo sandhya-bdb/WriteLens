@@ -1,0 +1,9 @@
+# ── Fine-tuning (Colab T4 GPU or any CUDA machine) ───────────────────────────
+torch
+transformers>=4.46
+peft
+bitsandbytes
+accelerate
+huggingface_hub
+numpy
+python-dotenv
