@@ -7,6 +7,7 @@ Usage:
     python scripts/evaluate.py                 # 200 human + 200 ChatGPT answers
     python scripts/evaluate.py --n 500
     python scripts/evaluate.py --data-file all.jsonl   # use a local copy of HC3
+    python scripts/evaluate.py --model finetuned       # QLoRA classifier (see training/)
 
 Outputs:
     eval/results.json  full metrics
@@ -24,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from logic.detector import MAX_CHARS, split_sentences  # noqa: E402
+from logic.detector import MAX_CHARS, split_sentences  # noqa: E402  (also imports torch)
 from logic.explainer import signal_level  # noqa: E402
 
 # A text counts as "flagged" at each of these ai_score thresholds
@@ -82,6 +83,7 @@ def metrics(labels: list[int], scores: list[int], threshold: int) -> dict:
 
 def to_markdown(result: dict) -> str:
     lines = [
+        f"Model: {result.get('model', 'heuristic')}. "
         f"Evaluated on {result['n_human']} human and {result['n_ai']} ChatGPT answers "
         f"from HC3 (seed {result['seed']}).",
         "",
@@ -106,14 +108,24 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data-file", help="local path to HC3 all.jsonl")
     parser.add_argument("--out-dir", default=str(ROOT / "eval"))
+    parser.add_argument("--model", choices=["heuristic", "finetuned"], default="heuristic",
+                        help="heuristic = GPT-2 perplexity rules; finetuned = QLoRA classifier")
+    parser.add_argument("--adapter", default=str(ROOT / "models" / "writelens-qwen-lora"),
+                        help="LoRA adapter folder for --model finetuned")
     args = parser.parse_args()
 
-    from logic.detector import AIDetector  # imported late: loads GPT-2
-
     samples = build_samples(load_hc3(args.data_file), args.n, args.seed)
-    print(f"Scoring {len(samples)} texts with GPT-2 (this can take a while on CPU)…")
 
-    detector = AIDetector()
+    if args.model == "finetuned":
+        from logic.finetuned_detector import FineTunedDetector
+        detector = FineTunedDetector(args.adapter)
+        suffix = "_finetuned"
+    else:
+        from logic.detector import AIDetector  # imported late: loads GPT-2
+        detector = AIDetector()
+        suffix = ""
+    print(f"Scoring {len(samples)} texts with the {args.model} model…")
+
     labels, scores = [], []
     levels = {"human": {}, "chatgpt": {}}
     for i, (text, label) in enumerate(samples, 1):
@@ -127,6 +139,7 @@ def main() -> None:
             print(f"  {i}/{len(samples)}")
 
     result = {
+        "model": args.model,
         "dataset": "Hello-SimpleAI/HC3 (all.jsonl)",
         "seed": args.seed,
         "n_human": labels.count(0),
@@ -137,10 +150,11 @@ def main() -> None:
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "results.json").write_text(json.dumps(result, indent=2))
-    (out / "RESULTS.md").write_text(to_markdown(result))
+    json_path, md_path = out / f"results{suffix}.json", out / f"RESULTS{suffix}.md"
+    json_path.write_text(json.dumps(result, indent=2))
+    md_path.write_text(to_markdown(result))
     print(to_markdown(result))
-    print(f"Saved to {out / 'results.json'} and {out / 'RESULTS.md'}")
+    print(f"Saved to {json_path} and {md_path}")
 
 
 if __name__ == "__main__":

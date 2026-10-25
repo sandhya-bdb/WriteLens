@@ -47,6 +47,8 @@ flowchart LR
 | API | `backend/api.py` | `POST /analyze` with input validation |
 | UI | `frontend/app.py` | Paste text, see scores, highlighted sentences, reasons and summary |
 | Evaluation | `scripts/evaluate.py` | Accuracy and false positive rate on HC3 |
+| Fine-tuning | `training/finetune_detector.py` | QLoRA classifier on HC3, evaluation questions held out |
+| Fine-tuned model | `logic/finetuned_detector.py` | Loads the base model + LoRA adapter and returns P(AI) |
 
 ### How the score is built
 
@@ -90,6 +92,30 @@ It writes `eval/results.json` and `eval/RESULTS.md` with accuracy, precision, re
 - These results are for HC3 (ChatGPT answers from early 2023, mostly English Q&A). Newer models, other genres and non-native writers may behave differently.
 
 Full numbers: [`eval/results.json`](eval/results.json).
+
+## 🧪 Fine-tuned detector (QLoRA)
+
+The heuristic is precise but misses about half of AI text. To see whether a trained model does better *without* flagging more human writers, WriteLens includes a fine-tuning pipeline:
+
+| | |
+|---|---|
+| Base model | `Qwen/Qwen2.5-0.5B` with a sequence-classification head |
+| Method | QLoRA: 4-bit NF4 base weights + LoRA adapters (r = 16) on attention projections |
+| Data | HC3 human vs ChatGPT answers, balanced, 2,000 per class by default |
+| Leakage guard | Every HC3 question used in the evaluation above is removed before training, and the script asserts zero overlap |
+| Hardware | Free Colab T4 GPU |
+
+Run it in Colab with [`notebooks/finetune_and_evaluate.ipynb`](notebooks/finetune_and_evaluate.ipynb), or:
+
+```bash
+pip install -r requirements-train.txt
+python training/finetune_detector.py --per-class 2000 --epochs 1
+python scripts/evaluate.py --model finetuned
+```
+
+Results go to `eval/results_finetuned.json` and `eval/RESULTS_finetuned.md`, scored on exactly the same 200 + 200 answers as the heuristic.
+
+Results: *to be added after the Colab run.*
 
 ## 🚀 Quick Start (Docker)
 
