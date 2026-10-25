@@ -116,7 +116,25 @@ python scripts/evaluate.py --model finetuned
 
 Results go to `eval/results_finetuned.json` and `eval/RESULTS_finetuned.md`, scored on exactly the same 200 + 200 answers as the heuristic.
 
-Results: *to be added after the Colab run.*
+### Results (same 200 human + 200 ChatGPT answers, Colab T4)
+
+Training: 4,000 examples, 1 epoch, about 5 minutes. 2.2M trainable parameters (0.44% of the model). Validation: 99.5% accuracy, 1% false positive rate, eval loss 0.0097. Details: [`eval/training_metrics_finetuned.json`](eval/training_metrics_finetuned.json).
+
+| Model | Accuracy | Recall (AI caught) | False positive rate (humans flagged) |
+|---|---|---|---|
+| GPT-2 heuristic, "Strong" level | 77.5% | 55.5% | 0.5% (1 of 200) |
+| Fine-tuned Qwen2.5-0.5B (QLoRA) | 100.0% | 100.0% | 0.0% (0 of 200) |
+
+Every human answer landed in "Few AI-like signals" and every ChatGPT answer in "Strong AI-like signals". Full numbers: [`eval/results_finetuned.json`](eval/results_finetuned.json).
+
+**Read this before trusting the 100%**
+
+- The fine-tuned model never saw these 400 answers or their questions (the training script removes them and checks for overlap). So this isn't leakage.
+- But it *is* an in-distribution test: same dataset, same question sources, same ChatGPT version (early 2023). HC3's human and ChatGPT answers differ in obvious surface style, which a trained model picks up easily. A perfect score here mainly shows the model learned HC3's patterns.
+- What it doesn't show yet: how the model does on text from newer models (GPT-4o, Claude, Llama), on student essays, or on non-native English writing. Those are exactly the cases that matter in a classroom.
+- Until that's tested, the app keeps using the explainable GPT-2 heuristic. The fine-tuned model is used in evaluation only, not yet in the app.
+
+Next step: an out-of-distribution test set (essays and newer-model text) to see how much of this score holds up.
 
 ## 🚀 Quick Start (Docker)
 
