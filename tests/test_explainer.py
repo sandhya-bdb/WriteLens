@@ -3,6 +3,7 @@ test_explainer.py: unit tests for logic/explainer.py (pure Python, no GPT-2).
 """
 from logic.explainer import (
     DISCLAIMER,
+    MIXED_NOTE,
     PREDICTABLE_SENTENCE_PPL,
     build_reasons,
     explain,
@@ -96,3 +97,16 @@ class TestExplain:
     def test_disclaimer_warns_about_mistakes(self):
         assert "mistakes" in DISCLAIMER.lower()
         assert "never" in DISCLAIMER.lower()
+
+
+class TestMixedNote:
+    def test_mixed_level_adds_caution_note(self):
+        report = explain({"perplexity": 40.0, "burstiness": 15.0, "ai_score": 40,
+                          "sentences": _sentences(40, 60, 35)})
+        assert report["signal_level"] == "Mixed signals"
+        assert MIXED_NOTE in report["reasons"]
+
+    def test_strong_level_has_no_mixed_note(self):
+        report = explain({"perplexity": 20.0, "burstiness": 5.0, "ai_score": 90,
+                          "sentences": _sentences(20, 22, 21)})
+        assert MIXED_NOTE not in report["reasons"]

@@ -69,7 +69,27 @@ python scripts/evaluate.py --n 200
 
 It writes `eval/results.json` and `eval/RESULTS.md` with accuracy, precision, recall and the **false positive rate** (how often human answers get flagged) at two thresholds.
 
-Results: *run the script and paste `eval/RESULTS.md` here.*
+### Results (200 human + 200 ChatGPT answers, seed 42, run on a Colab T4 GPU)
+
+| Flag when | Accuracy | Precision | Recall (AI caught) | False positive rate (humans flagged) |
+|---|---|---|---|---|
+| Strong AI-like signals (score ≥ 70) | 77.5% | 99.1% | 55.5% | **0.5%** (1 of 200) |
+| Mixed or strong (score ≥ 40) | 66.7% | 60.1% | 100.0% | 66.5% (133 of 200) |
+
+| Signal level | Human answers | ChatGPT answers |
+|---|---|---|
+| Strong AI-like signals | 1 | 111 |
+| Mixed signals | 132 | 89 |
+| Few AI-like signals | 67 | 0 |
+
+**What this means**
+
+- **"Strong AI-like signals" is trustworthy when it appears.** Only 1 of 200 human answers got this label. But it catches only about half of the ChatGPT answers, so a missing flag does not mean the text is human.
+- **"Mixed signals" says very little on its own.** Two in three human answers landed here. That's why WriteLens adds an explicit note to every "Mixed" result saying it is not a reason for concern by itself.
+- **No ChatGPT answer scored "Few AI-like signals"**, so that label is a reasonable sign of human-like writing on this dataset.
+- These results are for HC3 (ChatGPT answers from early 2023, mostly English Q&A). Newer models, other genres and non-native writers may behave differently.
+
+Full numbers: [`eval/results.json`](eval/results.json).
 
 ## 🚀 Quick Start (Docker)
 

@@ -24,6 +24,15 @@ DISCLAIMER = (
 )
 
 
+# From the HC3 evaluation (eval/results.json): 132 of 200 human answers
+# landed in "Mixed signals", so this level alone says very little.
+MIXED_NOTE = (
+    "Mixed signals are common in ordinary human writing: in our HC3 test, "
+    "about two in three human-written answers landed here. On its own this "
+    "result is not a reason for concern."
+)
+
+
 def signal_level(ai_score: int) -> str:
     """Map the 0-100 heuristic score to a cautious, human-readable level."""
     if ai_score >= 70:
@@ -98,9 +107,13 @@ def explain(analysis: dict) -> dict:
         }
     """
     sentences = flag_sentences(analysis.get("sentences", []))
+    level = signal_level(analysis["ai_score"])
+    reasons = build_reasons(analysis["perplexity"], analysis["burstiness"], sentences)
+    if level == "Mixed signals":
+        reasons.append(MIXED_NOTE)
     return {
-        "signal_level": signal_level(analysis["ai_score"]),
-        "reasons": build_reasons(analysis["perplexity"], analysis["burstiness"], sentences),
+        "signal_level": level,
+        "reasons": reasons,
         "sentences": sentences,
         "disclaimer": DISCLAIMER,
     }

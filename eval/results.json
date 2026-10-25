@@ -1,0 +1,39 @@
+{
+  "dataset": "Hello-SimpleAI/HC3 (all.jsonl)",
+  "seed": 42,
+  "n_human": 200,
+  "n_ai": 200,
+  "thresholds": {
+    "strong (>=70)": {
+      "accuracy": 0.775,
+      "precision": 0.991,
+      "recall": 0.555,
+      "false_positive_rate": 0.005,
+      "tp": 111,
+      "tn": 199,
+      "fp": 1,
+      "fn": 89
+    },
+    "mixed or strong (>=40)": {
+      "accuracy": 0.667,
+      "precision": 0.601,
+      "recall": 1.0,
+      "false_positive_rate": 0.665,
+      "tp": 200,
+      "tn": 67,
+      "fp": 133,
+      "fn": 0
+    }
+  },
+  "signal_levels": {
+    "human": {
+      "Mixed signals": 132,
+      "Few AI-like signals": 67,
+      "Strong AI-like signals": 1
+    },
+    "chatgpt": {
+      "Strong AI-like signals": 111,
+      "Mixed signals": 89
+    }
+  }
+}
