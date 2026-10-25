@@ -17,7 +17,9 @@ Output: a LoRA adapter folder (default models/writelens-qwen-lora) plus
 training_metrics.json inside it.
 """
 import argparse
+import inspect
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -75,6 +77,22 @@ def build_training_set(rows: list[dict], per_class: int, seed: int, val_fraction
 
 
 # ── Training (needs GPU libraries) ────────────────────────────────────────────
+
+def make_training_args(cls, **kwargs):
+    """
+    Build TrainingArguments across transformers versions: older releases call
+    eval_strategy "evaluation_strategy", and unsupported keys are dropped
+    with a warning instead of crashing the run.
+    """
+    params = inspect.signature(cls.__init__).parameters
+    if "eval_strategy" not in params and "evaluation_strategy" in params:
+        kwargs["evaluation_strategy"] = kwargs.pop("eval_strategy")
+    dropped = [k for k in kwargs if k not in params]
+    for k in dropped:
+        kwargs.pop(k)
+    if dropped:
+        print(f"Note: this transformers version ignores {dropped}")
+    return cls(**kwargs)
 
 def train(args) -> None:
     import numpy as np
@@ -149,16 +167,20 @@ def train(args) -> None:
         }
 
     out_dir = Path(args.output_dir)
+    grad_accum = 2
+    steps_per_epoch = math.ceil(len(train_set) / (args.batch_size * grad_accum))
+    warmup_steps = max(1, int(0.05 * steps_per_epoch * args.epochs))
     trainer = Trainer(
         model=model,
-        args=TrainingArguments(
+        args=make_training_args(
+            TrainingArguments,
             output_dir=str(out_dir / "checkpoints"),
             num_train_epochs=args.epochs,
             per_device_train_batch_size=args.batch_size,
             per_device_eval_batch_size=args.batch_size,
-            gradient_accumulation_steps=2,
+            gradient_accumulation_steps=grad_accum,
             learning_rate=args.lr,
-            warmup_ratio=0.05,
+            warmup_steps=warmup_steps,
             lr_scheduler_type="cosine",
             fp16=torch.cuda.is_available(),
             logging_steps=20,
