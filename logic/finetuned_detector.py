@@ -36,13 +36,10 @@ class FineTunedDetector:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        base = AutoModelForSequenceClassification.from_pretrained(
-            base_model,
-            num_labels=2,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-        )
+        base = AutoModelForSequenceClassification.from_pretrained(base_model, num_labels=2)
         base.config.pad_token_id = self.tokenizer.pad_token_id
-        self.model = PeftModel.from_pretrained(base, adapter_path).to(self.device).eval()
+        model = PeftModel.from_pretrained(base, adapter_path).to(self.device)
+        self.model = (model.half() if self.device == "cuda" else model).eval()
         logger.info("Fine-tuned detector loaded.")
 
     def ai_probability(self, text: str) -> float:

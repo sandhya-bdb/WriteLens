@@ -54,3 +54,17 @@ class TestScoreMapping:
 
     def test_rounding(self):
         assert ai_probability_to_score(0.704) == 70
+
+
+class TestMakeTrainingArgs:
+    def test_drops_unknown_and_maps_old_eval_name(self):
+        from training.finetune_detector import make_training_args
+
+        class OldArgs:
+            def __init__(self, output_dir, evaluation_strategy="no", learning_rate=1e-4):
+                self.output_dir, self.evaluation_strategy, self.learning_rate = output_dir, evaluation_strategy, learning_rate
+
+        a = make_training_args(OldArgs, output_dir="x", eval_strategy="epoch",
+                               learning_rate=2e-4, warmup_ratio=0.05)
+        assert a.evaluation_strategy == "epoch"
+        assert a.learning_rate == 2e-4
