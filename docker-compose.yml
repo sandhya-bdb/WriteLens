@@ -1,11 +1,11 @@
 services:
 
-  # ── Backend — FastAPI + LangGraph + GPT-2 + Groq ─────────────────────────
+  # ── Backend: FastAPI + LangGraph + GPT-2 + Groq (optional) ─────────────────────────
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: stealthtext-backend
+    container_name: writelens-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -33,7 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: stealthtext-frontend
+    container_name: writelens-frontend
     restart: unless-stopped
     ports:
       - "8501:8501"

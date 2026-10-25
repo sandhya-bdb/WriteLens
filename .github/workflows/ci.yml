@@ -28,10 +28,6 @@ jobs:
         # Install test dependencies (pytest)
         pip install pytest pytest-asyncio
 
-    - name: Download NLTK data (for humanizer tests)
-      run: |
-        python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger'); nltk.download('punkt')"
-
     - name: Run test suite
       run: |
         pytest tests/ -v

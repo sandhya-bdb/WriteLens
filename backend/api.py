@@ -1,9 +1,10 @@
 import logging
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
+
 from agent.graph import app as agent_app
-from logic.detector import AIDetector, MAX_CHARS as DETECTOR_MAX_CHARS
-from logic.humanizer import MAX_CHARS as HUMANIZER_MAX_CHARS
+from logic.detector import MAX_CHARS as DETECTOR_MAX_CHARS
 
 # LangSmith: zero effect if LANGCHAIN_TRACING_V2 is not set.
 try:
@@ -20,28 +21,29 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
 
 app = FastAPI(
-    title="StealthText API",
-    version="1.0.0",
-    description="AI text humanizer — detect AI writing and rewrite it to sound human.",
+    title="WriteLens API",
+    version="2.0.0",
+    description=(
+        "Explainable AI-writing analysis for educators. Scores text with GPT-2 "
+        "perplexity and burstiness, highlights the most predictable sentences and "
+        "explains the result in plain language. Scores are signals, not proof."
+    ),
 )
 
-# Initialize logic once at startup (GPT-2 is ~500 MB — don't reload per request)
-detector = AIDetector()
-
-# ── Shared constants ─────────────────────────────────────────────────────────
-_MAX_CHARS  = min(DETECTOR_MAX_CHARS, HUMANIZER_MAX_CHARS)  # 8 000
-_MIN_CHARS  = 10
+_MAX_CHARS = DETECTOR_MAX_CHARS  # 8 000
+_MIN_CHARS = 10
 
 
 # ── Pydantic models ──────────────────────────────────────────────────────────
 
-class TextRequest(BaseModel):
+class AnalyzeRequest(BaseModel):
     text: str
+    include_feedback: bool = True
 
     @field_validator("text")
     @classmethod
@@ -57,112 +59,70 @@ class TextRequest(BaseModel):
                 f"Text is too long ({len(stripped)} chars). "
                 f"Maximum is {_MAX_CHARS} characters (~2 000 words)."
             )
-        return stripped  # return stripped so downstream never sees leading/trailing whitespace
+        return stripped
 
 
-class HumanizeRequest(TextRequest):
-    tone: str = "casual"
+class SentenceScore(BaseModel):
+    text: str
+    perplexity: float
+    flagged: bool
 
 
 class AnalysisResponse(BaseModel):
     perplexity: float
     burstiness: float
     ai_score: int
-    verdict: str
-
-
-class HumanizeResponse(BaseModel):
-    original_text: str
-    final_text: str
-    final_perplexity: float
-    final_burstiness: float
-    iterations: int
-    score_history: list[dict] = []
+    signal_level: str
+    reasons: list[str]
+    sentences: list[SentenceScore]
+    summary: str
+    disclaimer: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def read_root():
-    return {"message": "StealthText API is running", "version": "1.0.0"}
+    return {"message": "WriteLens API is running", "version": "2.0.0"}
+
+
+@traceable(name="writelens_pipeline", run_type="chain", tags=["writelens", "api"])
+def _run_pipeline(text: str, include_feedback: bool) -> dict:
+    """Wrapper so LangSmith shows the whole analyze -> explain -> feedback run as one trace."""
+    return agent_app.invoke({"text": text, "include_feedback": include_feedback})
 
 
 @app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_text(request: TextRequest):
+async def analyze_text(request: AnalyzeRequest):
     """
-    Score the supplied text with the GPT-2 detector.
-    Returns perplexity, burstiness, an AI probability score (0–100), and a verdict.
+    Analyze text for AI-like writing patterns and explain why.
+    Returns document scores, per-sentence scores with flags, reasons,
+    an optional teacher-friendly summary and an honest-use disclaimer.
     """
-    logger.info("/analyze — %d chars", len(request.text))
+    logger.info("/analyze: %d chars, feedback=%s", len(request.text), request.include_feedback)
     try:
-        result  = detector.analyze(request.text)
-        verdict = "Likely AI" if result["ai_score"] > 50 else "Likely Human"
+        state = _run_pipeline(request.text, request.include_feedback)
+        analysis, report = state["analysis"], state["report"]
         logger.info(
-            "/analyze done — ppl=%.1f  burst=%.1f  score=%d  verdict=%s",
-            result["perplexity"], result["burstiness"], result["ai_score"], verdict,
+            "/analyze done: ppl=%.1f burst=%.1f score=%d level=%s",
+            analysis["perplexity"], analysis["burstiness"], analysis["ai_score"], report["signal_level"],
         )
         return {
-            "perplexity": result["perplexity"],
-            "burstiness": result["burstiness"],
-            "ai_score":   result["ai_score"],
-            "verdict":    verdict,
+            "perplexity":   analysis["perplexity"],
+            "burstiness":   analysis["burstiness"],
+            "ai_score":     analysis["ai_score"],
+            "signal_level": report["signal_level"],
+            "reasons":      report["reasons"],
+            "sentences":    report["sentences"],
+            "summary":      state.get("summary", ""),
+            "disclaimer":   report["disclaimer"],
         }
     except ValueError as exc:
-        # Validation errors that slipped past Pydantic (shouldn't happen, belt-and-suspenders)
         logger.warning("/analyze validation error: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         logger.exception("/analyze unexpected error: %s", exc)
         raise HTTPException(status_code=500, detail="Internal server error during analysis.")
-
-
-@traceable(
-    name="humanize_pipeline",
-    run_type="chain",
-    tags=["stealthtext", "api"],
-)
-def _run_humanize_graph(text: str, tone: str = "casual") -> dict:
-    """
-    Thin wrapper so LangSmith captures the full agent pipeline
-    (detect → rewrite loop) as a single named top-level trace.
-    """
-    initial_state = {
-        "text": text,
-        "original_text": text,
-        "iterations": 0,
-        "history": [],
-        "tone": tone,
-    }
-    return agent_app.invoke(initial_state)
-
-
-@app.post("/humanize", response_model=HumanizeResponse)
-async def humanize_text(request: HumanizeRequest):
-    """
-    Run the LangGraph detect→rewrite agent on the supplied text.
-    Returns the humanized text along with final scores and iteration count.
-    """
-    logger.info("/humanize — %d chars, tone=%s", len(request.text), request.tone)
-    try:
-        final_state = _run_humanize_graph(request.text, tone=request.tone)
-        logger.info(
-            "/humanize done — %d iteration(s), final ppl=%.1f, tone=%s",
-            final_state["iterations"], final_state["perplexity"], request.tone
-        )
-        return {
-            "original_text":    final_state["original_text"],
-            "final_text":       final_state["text"],
-            "final_perplexity": final_state["perplexity"],
-            "final_burstiness": final_state["burstiness"],
-            "iterations":       final_state["iterations"],
-            "score_history":    final_state.get("score_history", []),
-        }
-    except ValueError as exc:
-        logger.warning("/humanize validation error: %s", exc)
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        logger.exception("/humanize unexpected error: %s", exc)
-        raise HTTPException(status_code=500, detail="Internal server error during humanization.")
 
 
 if __name__ == "__main__":

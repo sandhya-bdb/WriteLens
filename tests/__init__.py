@@ -1,1 +1,1 @@
-# StealthText test package
+# WriteLens test package

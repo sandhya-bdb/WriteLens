@@ -1,8 +1,8 @@
-import streamlit as st
-import streamlit.components.v1 as components
-import requests
-import difflib
+import html
 import os
+
+import requests
+import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,8 +12,8 @@ load_dotenv()
 API_URL = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 st.set_page_config(
-    page_title="StealthText | AI Humanizer",
-    page_icon="🕵️",
+    page_title="WriteLens | Explainable AI-Writing Analysis",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -91,10 +91,8 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .badge-human { display:inline-block; background:rgba(34,197,94,0.15); color:#22c55e; border:1px solid #22c55e; padding:0.25rem 0.9rem; border-radius:2rem; font-weight:700; font-size:0.9rem; }
 .badge-ai    { display:inline-block; background:rgba(239,68,68,0.15);  color:#ef4444; border:1px solid #ef4444; padding:0.25rem 0.9rem; border-radius:2rem; font-weight:700; font-size:0.9rem; }
 
-/* ── Diff box ────────────────────────────────────────────── */
-.diff-box { background:#1a1d2e; border:1px solid #2a2d3e; border-radius:12px; padding:1.2rem 1.4rem; line-height:1.85; font-size:0.92rem; color:#c8cde8; }
-ins  { background:rgba(34,197,94,0.18); color:#22c55e; text-decoration:none; border-radius:3px; padding:0 2px; }
-del  { background:rgba(239,68,68,0.18);  color:#ef4444; border-radius:3px; padding:0 2px; }
+/* ── Sentence view ───────────────────────────────────────── */
+.sent-box { background:#1a1d2e; border:1px solid #2a2d3e; border-radius:12px; padding:1.2rem 1.4rem; line-height:1.85; font-size:0.92rem; color:#c8cde8; }
 
 /* ── Section titles ──────────────────────────────────────────────────────────────────── */
 .sec-title { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.10em; color:#6b7280; margin-bottom:0.6rem; }
@@ -103,11 +101,14 @@ hr.divider { border:none; border-top:1px solid #2a2d3e; margin:1.5rem 0; }
 /* ── LangSmith badge ─────────────────────────────────────────────────────────────────── */
 .ls-badge-on  { display:inline-flex; align-items:center; gap:0.4rem; background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid #22c55e; padding:0.22rem 0.75rem; border-radius:2rem; font-size:0.78rem; font-weight:700; }
 .ls-badge-off { display:inline-flex; align-items:center; gap:0.4rem; background:rgba(107,114,128,0.12); color:#6b7280; border:1px solid #374151; padding:0.22rem 0.75rem; border-radius:2rem; font-size:0.78rem; font-weight:600; }
+.sent-flag { background:rgba(245,158,11,0.18); border-bottom:2px solid #f59e0b; border-radius:3px; padding:0 2px; }
+.note-box { background:rgba(108,99,255,0.08); border:1px solid #3b3f63; border-radius:12px; padding:0.9rem 1.1rem; color:#c8cde8; font-size:0.88rem; line-height:1.6; }
+.badge-mixed { display:inline-block; background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid #f59e0b; padding:0.25rem 0.9rem; border-radius:2rem; font-weight:700; font-size:0.9rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
-SAMPLE_AI_TEXT = (
+SAMPLE_TEXT = (
     "Artificial intelligence is fundamentally transforming the landscape of modern business operations. "
     "By leveraging advanced machine learning algorithms, organizations can now utilize data-driven insights "
     "to make more informed strategic decisions. Furthermore, the implementation of AI technologies enables "
@@ -117,11 +118,19 @@ SAMPLE_AI_TEXT = (
     "tasks, thereby allowing human employees to focus on more creative and high-value activities."
 )
 
+
 def ppl_cls(v):
     return "good" if v >= 60 else ("warn" if v >= 35 else "bad")
 
+
 def burst_cls(v):
     return "good" if v >= 20 else ("warn" if v >= 8 else "bad")
+
+
+def level_badge(level):
+    cls = {"Strong AI-like signals": "badge-ai", "Mixed signals": "badge-mixed"}.get(level, "badge-human")
+    return f'<span class="{cls}">{html.escape(level)}</span>'
+
 
 def card(name, val, sub, cls):
     st.markdown(f"""
@@ -131,284 +140,137 @@ def card(name, val, sub, cls):
         <div class="m-sub">{sub}</div>
     </div>""", unsafe_allow_html=True)
 
-def word_diff(a, b):
-    aw, bw = a.split(), b.split()
-    sm = difflib.SequenceMatcher(None, aw, bw)
+
+def sentence_view(sentences):
+    """Render sentences inline, highlighting the flagged (highly predictable) ones."""
     out = []
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            out.append(" ".join(aw[i1:i2]))
-        elif tag == "replace":
-            out.append(f'<del>{" ".join(aw[i1:i2])}</del>')
-            out.append(f'<ins>{" ".join(bw[j1:j2])}</ins>')
-        elif tag == "delete":
-            out.append(f'<del>{" ".join(aw[i1:i2])}</del>')
-        elif tag == "insert":
-            out.append(f'<ins>{" ".join(bw[j1:j2])}</ins>')
+    for s in sentences:
+        text = html.escape(s["text"])
+        if s["flagged"]:
+            out.append(f'<span class="sent-flag" title="perplexity {s["perplexity"]}">{text}</span>')
+        else:
+            out.append(f'<span title="perplexity {s["perplexity"]}">{text}</span>')
     return " ".join(out)
+
 
 # ─── Sidebar ───────────────────────────────────────────────────────────────
 _ls_enabled = os.environ.get("LANGCHAIN_TRACING_V2", "").lower() == "true"
 _ls_key_set = bool(os.environ.get("LANGCHAIN_API_KEY", "").strip())
-_ls_project = os.environ.get("LANGCHAIN_PROJECT", "StealthText")
-_ls_active   = _ls_enabled and _ls_key_set
+_ls_project = os.environ.get("LANGCHAIN_PROJECT", "WriteLens")
+_ls_active = _ls_enabled and _ls_key_set
 
 with st.sidebar:
-    st.markdown("## 🕵️ StealthText")
+    st.markdown("## 🔍 WriteLens")
     st.markdown("---")
-    st.markdown("🟢 **Backend:** FastAPI running")
-    st.markdown("🟢 **LLM:** Groq — Llama 3.3 70B")
-    st.markdown("🟢 **Detector:** GPT-2")
+    st.markdown("🟢 **Backend:** FastAPI + LangGraph")
+    st.markdown("🟢 **Scoring:** GPT-2 perplexity & burstiness")
+    st.markdown("🟢 **Summary:** Groq Llama 3.3 70B (optional)")
 
-    # ── LangSmith tracing status ──────────────────────────
     st.markdown("")
-    st.markdown("**🔍 LangSmith Tracing**")
+    st.markdown("**LangSmith Tracing**")
     if _ls_active:
         ls_url = f"https://smith.langchain.com/o/~/projects/p/{_ls_project}"
         st.markdown(
             f'<a href="{ls_url}" target="_blank">'
-            f'<span class="ls-badge-on">● Active — {_ls_project}</span></a>',
+            f'<span class="ls-badge-on">● Active: {_ls_project}</span></a>',
             unsafe_allow_html=True
         )
-        st.caption("Every humanize run is traced. Click badge to open LangSmith.")
     elif _ls_enabled and not _ls_key_set:
-        st.markdown(
-            '<span class="ls-badge-off">⚠ Key missing</span>',
-            unsafe_allow_html=True
-        )
-        st.caption("Set `LANGCHAIN_API_KEY` in `.env` to activate.")
+        st.markdown('<span class="ls-badge-off">⚠ Key missing</span>', unsafe_allow_html=True)
     else:
-        st.markdown(
-            '<span class="ls-badge-off">○ Disabled</span>',
-            unsafe_allow_html=True
-        )
-        st.caption("Set `LANGCHAIN_TRACING_V2=true` in `.env` to enable.")
+        st.markdown('<span class="ls-badge-off">○ Disabled</span>', unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("**✍️ Writing Tone**")
-    tone_option = st.selectbox(
-        "Select tone",
-        options=["Casual / Creative", "Professional / Academic"],
-        index=0,
-        label_visibility="collapsed"
-    )
-    tone = "casual" if tone_option == "Casual / Creative" else "professional"
+    include_feedback = st.toggle("Teacher-friendly summary", value=True)
 
     st.markdown("---")
-    st.markdown("### 📖 Score Guide")
+    st.markdown("### 📖 How to read the scores")
     st.markdown("""
-**Perplexity** — unpredictability of words
-- ✅ > 60 → Human-like
-- ⚠️ 35–60 → Borderline  
-- ❌ < 35 → Sounds like AI
+**Perplexity:** how predictable the wording is to GPT-2.
+Lower = more predictable, which is common in AI text.
 
-**Burstiness** — sentence length variety
-- ✅ > 20 → Human-like
-- ⚠️ 8–20 → Borderline
-- ❌ < 8 → Sounds like AI
+**Burstiness:** how much sentence complexity varies.
+Lower = very uniform sentences.
 
-**AI Score** — combined probability
-- 0% = Definitely human
-- 100% = Definitely AI
+**Highlighted sentences** have highly predictable wording.
 
-**Tip:** AI text is uniform and predictable.
-Humans write messily — short bursts, then
-long complex sentences.
+**Remember:** these are statistical signals, not proof of who wrote the text.
     """)
 
 # ─── Header ────────────────────────────────────────────────────────────────
-st.markdown("## 🕵️ StealthText — AI Text Humanizer")
-st.markdown("Paste AI-generated text → we rewrite it to bypass detectors, then show you **what changed** and **how scores improved**.")
+st.markdown("## 🔍 WriteLens: Explainable AI-Writing Analysis")
+st.markdown(
+    "Paste a piece of writing to see **which patterns look AI-generated and why**, "
+    "sentence by sentence. Built for teachers who want to understand a result, not just get a number."
+)
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-# ─── Input / Output ────────────────────────────────────────────────────────
-left, right = st.columns(2, gap="large")
+# ─── Input ─────────────────────────────────────────────────────────────────
+st.markdown('<div class="sec-title">Text to analyze</div>', unsafe_allow_html=True)
+if st.button("Load sample text"):
+    st.session_state["sample_loaded"] = True
 
-with left:
-    st.markdown('<div class="sec-title">📥 Your Input Text</div>', unsafe_allow_html=True)
-    if st.button("📋 Load Sample AI Text", use_container_width=False):
-        st.session_state['sample_loaded'] = True
+default_val = SAMPLE_TEXT if st.session_state.get("sample_loaded") else ""
+input_text = st.text_area("Text", value=default_val, height=220,
+                          placeholder="Paste text here (at least 3 sentences works best)…",
+                          key="input_area", label_visibility="collapsed")
 
-    default_val = SAMPLE_AI_TEXT if st.session_state.get('sample_loaded') else ""
-    input_text = st.text_area("", value=default_val, height=260,
-                               placeholder="Paste AI-generated text here…", key="input_area", label_visibility="collapsed")
+analyze_btn = st.button("🔍 Analyze writing")
 
-    b1, b2 = st.columns(2)
-    with b1:
-        check_btn = st.button("🔍 Check for AI", use_container_width=True)
-    with b2:
-        humanize_btn = st.button("✨ Humanize Text", use_container_width=True)
-
-with right:
-    st.markdown('<div class="sec-title">📤 Humanized Output</div>', unsafe_allow_html=True)
-    st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)  # align with left
-    if 'humanized_result' in st.session_state:
-        final_text = st.session_state['humanized_result']['final_text']
-        st.text_area("", value=final_text,
-                     height=260, key="output_area", label_visibility="collapsed")
-        # ── Copy to clipboard button ──────────────────────────────────────────
-        # Escape backticks/backslashes so the JS template literal is safe
-        safe_text = final_text.replace("\\", "\\\\").replace("`", "\\`")
-        components.html(
-            f"""
-            <button id="copy-btn"
-              style="
-                background: linear-gradient(135deg, #6C63FF 0%, #c850c0 100%);
-                color: #fff;
-                border: none;
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 0.88rem;
-                padding: 0.45rem 1.1rem;
-                cursor: pointer;
-                transition: transform 0.15s, box-shadow 0.15s;
-                box-shadow: 0 3px 12px rgba(108,99,255,0.35);
-                font-family: 'Inter', sans-serif;
-                margin-top: 4px;
-              "
-              onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(108,99,255,0.5)'"
-              onmouseleave="this.style.transform='';this.style.boxShadow='0 3px 12px rgba(108,99,255,0.35)'"
-              onclick="
-                navigator.clipboard.writeText(`{safe_text}`).then(() => {{
-                  const btn = document.getElementById('copy-btn');
-                  btn.textContent = '✅ Copied!';
-                  btn.style.background = 'linear-gradient(135deg,#22c55e,#16a34a)';
-                  setTimeout(() => {{
-                    btn.textContent = '📋 Copy to Clipboard';
-                    btn.style.background = 'linear-gradient(135deg, #6C63FF 0%, #c850c0 100%)';
-                  }}, 1500);
-                }}).catch(() => {{
-                  alert('Copy failed — please select and copy manually.');
-                }});
-              "
-            >📋 Copy to Clipboard</button>
-            """,
-            height=48,
-        )
-    else:
-        st.text_area("", value="", height=260, disabled=True,
-                     placeholder="Humanized text will appear here…", label_visibility="collapsed")
-
-# ─── Button Actions ────────────────────────────────────────────────────────
-if check_btn:
+if analyze_btn:
     if input_text.strip():
-        with st.spinner("Analyzing with GPT-2…"):
-            try:
-                r = requests.post(f"{API_URL}/analyze", json={"text": input_text}, timeout=60)
-                if r.status_code == 200:
-                    st.session_state['analysis'] = r.json()
-                    st.session_state.pop('humanized_result', None)
-                else:
-                    st.error(f"Backend error {r.status_code}")
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Cannot connect to backend. Run: `uvicorn backend.api:app --reload`")
-    else:
-        st.warning("Paste some text first.")
-
-if humanize_btn:
-    if input_text.strip():
-        with st.spinner("Agent rewriting (up to 3 iterations via Groq)… ~20–40 seconds"):
+        with st.spinner("Scoring with GPT-2 and preparing the explanation…"):
             try:
                 r = requests.post(
-                    f"{API_URL}/humanize",
-                    json={"text": input_text, "tone": tone},
-                    timeout=180
+                    f"{API_URL}/analyze",
+                    json={"text": input_text, "include_feedback": include_feedback},
+                    timeout=120,
                 )
                 if r.status_code == 200:
-                    data = r.json()
-                    st.session_state['humanized_result'] = data
-                    orig = requests.post(f"{API_URL}/analyze", json={"text": input_text}, timeout=60)
-                    if orig.status_code == 200:
-                        st.session_state['analysis'] = orig.json()
-                    st.rerun()
+                    st.session_state["report"] = r.json()
                 else:
-                    st.error(f"Backend error: {r.text}")
+                    st.error(f"Backend error {r.status_code}: {r.text}")
             except requests.exceptions.ConnectionError:
-                st.error("❌ Cannot connect to backend.")
+                st.error("❌ Cannot connect to backend. Run: `uvicorn backend.api:app --reload`")
             except requests.exceptions.Timeout:
-                st.error("⏱ Timed out. Try shorter text (< 300 words).")
+                st.error("⏱ Timed out. Try a shorter text.")
     else:
         st.warning("Paste some text first.")
 
-# ─── Analysis Section ──────────────────────────────────────────────────────
-if 'analysis' in st.session_state:
+# ─── Report ────────────────────────────────────────────────────────────────
+if "report" in st.session_state:
+    d = st.session_state["report"]
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    d = st.session_state['analysis']
-    is_ai = d['ai_score'] > 50
-    badge = f'<span class="badge-ai">🤖 {d["verdict"]}</span>' if is_ai else f'<span class="badge-human">🧑 {d["verdict"]}</span>'
-    st.markdown(f"### 📊 Original Text Analysis &nbsp;&nbsp; {badge}", unsafe_allow_html=True)
+    st.markdown(f"### 📊 Analysis &nbsp;&nbsp; {level_badge(d['signal_level'])}", unsafe_allow_html=True)
     st.markdown("")
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        card("Perplexity", round(d['perplexity'], 1),
-             "Target > 60 (unpredictable = human)", ppl_cls(d['perplexity']))
+        card("Perplexity", round(d["perplexity"], 1),
+             "Lower = more predictable wording", ppl_cls(d["perplexity"]))
     with c2:
-        card("Burstiness", round(d['burstiness'], 1),
-             "Target > 20 (varied sentences = human)", burst_cls(d['burstiness']))
+        card("Burstiness", round(d["burstiness"], 1),
+             "Lower = more uniform sentences", burst_cls(d["burstiness"]))
     with c3:
-        card("AI Score", f"{d['ai_score']}%",
-             "0% = human · 100% = AI-generated",
-             "bad" if is_ai else "good")
+        flagged = sum(1 for s in d["sentences"] if s["flagged"])
+        card("Predictable sentences", f"{flagged} / {len(d['sentences'])}",
+             "Highlighted below", "bad" if d["sentences"] and flagged / len(d["sentences"]) > 0.5 else "warn")
 
-# ─── After Humanizing ──────────────────────────────────────────────────────
-if 'humanized_result' in st.session_state:
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    h = st.session_state['humanized_result']
-    orig = st.session_state.get('analysis', {})
+    st.markdown("### 🧾 Why this result")
+    for reason in d["reasons"]:
+        st.markdown(f"- {reason}")
 
-    fp = round(h['final_perplexity'], 1)
-    fb = round(h['final_burstiness'], 1)
-    op = orig.get('perplexity', fp)
-    ob = orig.get('burstiness', fb)
-    dp = round(fp - op, 1)
-    db = round(fb - ob, 1)
+    if d["sentences"]:
+        st.markdown("### ✏️ Sentence by sentence")
+        st.caption("Highlighted = highly predictable wording. Hover a sentence to see its perplexity.")
+        st.markdown(f'<div class="sent-box">{sentence_view(d["sentences"])}</div>', unsafe_allow_html=True)
 
-    st.markdown(f"### 🚀 After Humanizing &nbsp;<small style='color:#6b7280;font-size:0.8rem;font-weight:400'>{h['iterations']} iteration(s) by LangGraph agent</small>", unsafe_allow_html=True)
+    if d.get("summary"):
+        st.markdown("### 🧑‍🏫 Summary for teachers")
+        st.markdown(f'<div class="note-box">{html.escape(d["summary"])}</div>', unsafe_allow_html=True)
+
     st.markdown("")
+    st.info(d["disclaimer"])
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        arrow = f"▲ +{dp}" if dp > 0 else (f"▼ {dp}" if dp < 0 else "→ unchanged")
-        card("Final Perplexity", fp, f"{arrow} &nbsp;|&nbsp; was {round(op,1)}", ppl_cls(fp))
-    with c2:
-        arrow = f"▲ +{db}" if db > 0 else (f"▼ {db}" if db < 0 else "→ unchanged")
-        card("Final Burstiness", fb, f"{arrow} &nbsp;|&nbsp; was {round(ob,1)}", burst_cls(fb))
-    with c3:
-        card("Rewrites", h['iterations'], "Agent stops when scores are good or max 3 reached", "good")
-
-    # ── Score Trend Chart ─────────────────────────────────────────────────
-    score_history = h.get('score_history', [])
-    if len(score_history) > 1:
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-        st.markdown("### 📈 Score Trend")
-        st.caption("How the text improved across each rewrite iteration by the agent.")
-        
-        import pandas as pd
-        df = pd.DataFrame(score_history)
-        # Ensure iteration is an integer and set it as index for the x-axis
-        df['iteration'] = df['iteration'].astype(int)
-        df = df.set_index('iteration')
-        
-        st.line_chart(df[['perplexity', 'burstiness']])
-
-    # ── Diff ──────────────────────────────────────────────────────────────
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    st.markdown("### 🔎 What the Agent Changed")
-
-    original_text  = h.get('original_text', input_text or "")
-    humanized_text = h.get('final_text', "")
-
-    if original_text.strip() == humanized_text.strip():
-        st.warning(
-            "⚠️ **The text didn't change.** This happens when your input already looks human "
-            "(high perplexity + burstiness). Try the **sample AI text** above — it starts with "
-            "typical AI buzzwords ('leveraging', 'crucial', 'moreover') that the agent will rewrite aggressively."
-        )
-    else:
-        st.caption("🟢 Highlighted = words added by the rewriter  •  🔴 Strikethrough = words removed")
-        diff_html = word_diff(original_text, humanized_text)
-        st.markdown(f'<div class="diff-box">{diff_html}</div>', unsafe_allow_html=True)
-
-    with st.expander("🛠 Debug: Raw API Response"):
-        st.json(h)
+    with st.expander("🛠 Raw API response"):
+        st.json(d)

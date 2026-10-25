@@ -1,18 +1,13 @@
-# ── Backend (FastAPI + LangGraph + GPT-2 detector + Groq rewriter) ──────────
+# ── Backend (FastAPI + LangGraph + GPT-2 scoring + optional Groq summary) ──
 # Keep this lean — no Streamlit, no pytest
 fastapi
 uvicorn[standard]
 starlette==0.41.3
 python-multipart
 httpx
-langchain
-langchain_openai
-langchain_community
 langgraph
 torch
 transformers
-nltk
-scipy
 numpy
 python-dotenv
 groq

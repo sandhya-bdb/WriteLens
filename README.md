@@ -1,137 +1,145 @@
-# StealthText 🕵️‍♂️
+# WriteLens 🔍
 
 ![Tests](https://github.com/sandhya-bdb/stealthtext_AI_bypass/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![LangGraph](https://img.shields.io/badge/LangGraph-Agent-purple)
+![LangGraph](https://img.shields.io/badge/LangGraph-Pipeline-purple)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
 ![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-StealthText is an AI text humanizer that uses a **LangGraph agent loop** to rewrite AI-generated text until it bypasses detection. 
+**Explainable AI-writing analysis for educators.**
 
-Instead of simple prompt-wrapping, StealthText uses a closed-loop system:
-1. **Detect**: Scores text using a local GPT-2 model (evaluating Perplexity and Burstiness).
-2. **Rewrite**: If the text scores as "Likely AI", it calls Groq (Llama 3.3 70B) to humanize it according to the selected **Writing Tone**.
-3. **Verify (Optional)**: If configured, verifies candidate humanized drafts against the commercial **GPTZero API**.
-4. **Evaluate**: Loops back to the detector until the text passes as human, or hits a max iteration limit.
+Most AI detectors give teachers one number and no reasons. WriteLens shows *which* sentences look machine-like, explains *why* in plain language, and is honest about how often detectors get it wrong.
 
-## ✨ Key Features
+> ⚠️ **Scores are signals, not proof.** WriteLens describes statistical patterns in writing, not who wrote it. AI-text detectors, including this one, make mistakes, and are known to flag some human writers more often (for example non-native English speakers and very formal writing). Use the results to start a conversation with a student, never as the only evidence for a decision.
 
-- **✍️ Tone Control Selector:** Choose between **Casual / Creative** (adds natural hedges, casual transitions, and expressive punctuation) or **Professional / Academic** (preserves formal, objective vocabulary and authoritative syntax while avoiding AI markers).
-- **📈 Score Trend Charts:** Visualizes perplexity and burstiness improvements iteration-by-iteration using a real-time line chart.
-- **📋 Copy to Clipboard:** Integrated clipboard utility on the humanized output panel with visual success notifications.
-- **🛡️ Hybrid Verification (GPTZero Client):** Supports optional validation against commercial detectors, utilizing local GPT-2 pre-screening to conserve API credits.
-- **🐳 Docker-First Deployment:** Fully containerized with `docker-compose` — backend, frontend, and model cache volumes pre-configured.
-- **✅ 50-Test Offline Suite:** Comprehensive `pytest` suite mocking LLM and GPT-2 so tests run instantly with no API keys or GPU.
+## ✨ What it does
 
-## 🎬 Demo
-
-> **How it works:** Paste any AI-generated text → select your tone → watch the agent loop rewrite and score in real time until it reads as human.
-
-| Step | What happens |
-|---|---|
-| 1. Input | You paste AI-generated text and choose a tone (Casual or Professional) |
-| 2. Detect | Local GPT-2 scores the text for Perplexity & Burstiness |
-| 3. Rewrite | Groq Llama 3.3 70B rewrites the text toward the target tone |
-| 4. Loop | Scores are charted live — loop continues until text passes or hits max iterations |
-| 5. Output | Final humanized text is ready to copy with one click |
-
-## 🤖 Custom Model Fine-Tuning (QLoRA)
-
-In addition to using zero-shot prompting with Groq Llama 3.3 70B, StealthText includes a dedicated fine-tuning engine to train specialized open-source models:
-
-- **Base Model:** `Qwen/Qwen2.5-3B-Instruct`
-- **Methodology:** Parameter-Efficient Fine-Tuning (QLoRA 4-bit quantization) using Hugging Face `SFTTrainer` on the `Hello-SimpleAI/HC3` human-AI dataset.
-- **Performance:** Achieved an **evaluation loss of 1.262**, yielding a compact ~60 MB adapter tailored specifically for bypassing AI detectors.
-- **Repository:** Code, dataset scripts, and training pipeline are available in the companion project **[StealthText-FineTuning](https://github.com/sandhya-bdb/finetuned-stealthtext)**.
+- **Document scores:** GPT-2 perplexity (how predictable the wording is) and burstiness (how much sentence complexity varies).
+- **Sentence-by-sentence view:** every sentence gets its own perplexity score, and highly predictable sentences are highlighted.
+- **Plain-language reasons:** e.g. *"Sentences are very uniform in complexity. People usually mix simple and complex sentences more."*
+- **Cautious signal levels:** "Strong AI-like signals", "Mixed signals" or "Few AI-like signals". Never "written by AI".
+- **Teacher-friendly summary (optional):** Groq Llama 3.3 70B turns the scores into a short note with a fair next step. It only sees the scores and flagged sentences, is told not to accuse anyone, and never rewrites the student's text. Without an API key, a built-in template summary is used.
+- **Built-in evaluation:** a script that measures accuracy and, most importantly, the false positive rate on real human writing from the HC3 dataset.
 
 ## 🏗 Architecture
 
-The backend is built with FastAPI and LangGraph, completely decoupled from the Streamlit frontend.
-
 ```mermaid
-graph TD
-    A[Input Text] --> B(Detector Node: Local GPT-2)
-    B --> C{Should Continue?}
-    C -->|AI Score > 50 & < 3 iterations| D(Rewriter Node: Groq Llama 3)
-    D --> B
-    C -->|Local Human Score| F{GPTZero API Key Set?}
-    F -->|Yes| G(External Check: GPTZero API)
-    F -->|No| E[Final Humanized Text]
-    G -->|Passed < 40% AI| E
-    G -->|Failed >= 40% AI| D
+flowchart LR
+    UI[Streamlit UI] -->|POST /analyze| API[FastAPI]
+    API --> G
+
+    subgraph G[LangGraph pipeline]
+        A[analyze<br/>GPT-2 perplexity,<br/>burstiness, per-sentence scores] --> E[explain<br/>reasons, flagged sentences,<br/>signal level]
+        E --> F[feedback<br/>Groq summary or template]
+    end
+
+    G --> API
+    G -. traces .-> LS[LangSmith]
 ```
+
+| Component | File | Role |
+|---|---|---|
+| Detector | `logic/detector.py` | GPT-2 perplexity, burstiness, sentence splitting and per-sentence scores |
+| Explainer | `logic/explainer.py` | Turns numbers into reasons, flags predictable sentences, holds the disclaimer |
+| Feedback | `logic/feedback.py` | Optional Groq summary with a template fallback |
+| Pipeline | `agent/graph.py` | LangGraph: analyze → explain → feedback |
+| API | `backend/api.py` | `POST /analyze` with input validation |
+| UI | `frontend/app.py` | Paste text, see scores, highlighted sentences, reasons and summary |
+| Evaluation | `scripts/evaluate.py` | Accuracy and false positive rate on HC3 |
+
+### How the score is built
+
+| Signal | Adds to score |
+|---|---|
+| Perplexity < 30 | +60 |
+| Perplexity 30 to 50 | +40 |
+| Perplexity ≥ 50 | +10 |
+| Burstiness < 10 | +30 |
+
+The total (0 to 100) maps to a signal level: ≥ 70 strong, 40 to 69 mixed, < 40 few. This is a simple, transparent heuristic on purpose: every point in the score can be explained to a teacher.
+
+## 📏 Evaluation
+
+Run the evaluation on the [HC3](https://huggingface.co/datasets/Hello-SimpleAI/HC3) dataset (human vs ChatGPT answers to the same questions):
+
+```bash
+python scripts/evaluate.py --n 200
+```
+
+It writes `eval/results.json` and `eval/RESULTS.md` with accuracy, precision, recall and the **false positive rate** (how often human answers get flagged) at two thresholds.
+
+Results: *run the script and paste `eval/RESULTS.md` here.*
 
 ## 🚀 Quick Start (Docker)
 
-The easiest way to run StealthText is via Docker. The GPT-2 model (~500MB) will be downloaded on the first run and cached in a volume.
-
-1. **Clone the repo**
+1. **Clone the repository**
    ```bash
-   git clone https://github.com/sandhya-bdb/stealthtext_AI_bypass.git
-   cd stealthtext_AI_bypass
+   git clone https://github.com/sandhya-bdb/stealthtext_AI_bypass.git writelens
+   cd writelens
    ```
 
-2. **Configure API Keys**
+2. **Configure environment (optional)**
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` and add your [Groq API Key](https://console.groq.com/keys). (LangSmith tracing is optional but recommended).
+   Add a [Groq API key](https://console.groq.com/keys) for LLM summaries and LangSmith keys for tracing. Both are optional.
 
-3. **Run with Docker Compose**
+3. **Run**
    ```bash
-   docker compose up --build
+   docker-compose up --build
    ```
-
-4. **Open the UI**
-   Navigate to [http://localhost:8501](http://localhost:8501)
+   Open [http://localhost:8501](http://localhost:8501).
 
 ## 💻 Local Development (No Docker)
 
-If you prefer to run it locally without Docker:
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-1. **Install dependencies**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements-backend.txt
-   pip install -r requirements-frontend.txt
-   ```
+uvicorn backend.api:app --reload --port 8000        # backend
+streamlit run frontend/app.py --server.port 8501    # frontend, in a second terminal
+```
 
-2. **Run Backend (FastAPI)**
-   ```bash
-   uvicorn backend.api:app --reload --port 8000
-   ```
+### API example
 
-3. **Run Frontend (Streamlit)**
-   ```bash
-   streamlit run frontend/app.py --server.port 8501
-   ```
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Paste at least three sentences here. ...", "include_feedback": true}'
+```
+
+Returns `perplexity`, `burstiness`, `ai_score`, `signal_level`, `reasons`, `sentences` (each with `perplexity` and `flagged`), `summary` and `disclaimer`.
 
 ## 🧪 Testing
-
-StealthText includes a comprehensive offline test suite (50 tests) using `pytest`. Tests mock the LLM and GPT-2 to run instantly without API keys or GPU.
 
 ```bash
 pytest tests/ -v
 ```
 
+Pipeline, API, explainer, feedback and evaluation tests mock GPT-2 and Groq, so they run offline. Detector tests load the real GPT-2 model.
+
 ## 🔍 Observability
 
-Full execution traces are available via [LangSmith](https://smith.langchain.com/). To enable, set `LANGCHAIN_TRACING_V2=true` and your `LANGCHAIN_API_KEY` in the `.env` file. The UI includes a live status badge reflecting tracing state.
+Set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in `.env` to trace every run in [LangSmith](https://smith.langchain.com/), with each pipeline node as its own span.
 
-## 📈 System Design & Scalability
+## 🧭 Limitations
 
-This project is built as a production-ready MVP with a decoupled architecture. While it performs extremely well for individual use or small teams, scaling it to 100,000+ users would require the following architectural shifts:
+- GPT-2 perplexity is a weak signal for text from newer models and for short texts. Three or more sentences work best.
+- Formal, technical or non-native English writing can look "predictable" and get flagged even when a person wrote it.
+- The score is a heuristic, not a trained classifier. The evaluation script exists so these limits are measured, not guessed.
 
-- **Stateful UI (Streamlit) → Stateless UI (Next.js):** Streamlit maintains a persistent WebSocket connection and server-side state for every user. For planet-scale traffic, the frontend would be rewritten in React/Next.js to use stateless REST/GraphQL calls.
-- **Local Model (GPT-2) → Dedicated Inference Server (vLLM):** Currently, the GPT-2 model is loaded into the FastAPI worker memory (CPU). At scale, the model would be decoupled into a dedicated GPU inference server (like vLLM or Triton) to prevent the web server from being CPU/RAM bottlenecked.
-- **API Rate Limiting (Groq):** To handle high concurrency without hitting Groq's RPM (Requests Per Minute) limits, a router like LiteLLM would be introduced to automatically fall back to secondary providers (like OpenAI or Anthropic) with exponential backoff and retry logic.
+## 📈 Scaling notes
 
-## 🤝 Contributing
+- **GPT-2 in the API worker → dedicated inference server** (vLLM or Triton) so the web server isn't CPU-bound.
+- **Streamlit → stateless frontend** (Next.js) for many concurrent users.
+- **LLM summaries:** add a router such as LiteLLM for fallback providers and rate-limit handling.
 
-Pull requests are welcome! For major changes, please open an issue first to discuss what you'd like to change. Please make sure to update tests accordingly.
+## 📝 Project history
+
+This project started as an experiment in rewriting AI text to pass detectors. It was rebuilt as an analysis-only tool: the rewriting code was removed, and the focus moved to explaining results honestly and measuring false positives, which matter far more in education.
 
 ## 📄 License
 
-This project is licensed under the [MIT License](./LICENSE).
+[MIT License](./LICENSE)

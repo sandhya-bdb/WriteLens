@@ -163,3 +163,41 @@ class TestEdgeCases:
         assert r1["perplexity"] == r2["perplexity"]
         assert r1["burstiness"] == r2["burstiness"]
         assert r1["ai_score"] == r2["ai_score"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: sentence splitting and per-sentence scores
+# ---------------------------------------------------------------------------
+
+class TestSplitSentences:
+    """split_sentences() is pure Python and needs no model."""
+
+    def test_splits_on_terminal_punctuation(self):
+        from logic.detector import split_sentences
+        text = "This is the first sentence. Is this the second one? Yes, this is the third!"
+        assert len(split_sentences(text)) == 3
+
+    def test_drops_very_short_fragments(self):
+        from logic.detector import split_sentences
+        assert split_sentences("Ok. Fine. This one is long enough to keep.") == [
+            "This one is long enough to keep."
+        ]
+
+    def test_empty_text(self):
+        from logic.detector import split_sentences
+        assert split_sentences("   ") == []
+
+
+class TestSentenceScores:
+    def test_analyze_returns_sentences(self, detector, MULTI_SENTENCE_TEXT):
+        result = detector.analyze(MULTI_SENTENCE_TEXT)
+        assert len(result["sentences"]) == 5
+        for s in result["sentences"]:
+            assert isinstance(s["text"], str)
+            assert s["perplexity"] > 0
+
+    def test_burstiness_matches_sentence_scores(self, detector, MULTI_SENTENCE_TEXT):
+        import numpy as np
+        result = detector.analyze(MULTI_SENTENCE_TEXT)
+        expected = float(np.std([s["perplexity"] for s in result["sentences"]]))
+        assert abs(result["burstiness"] - round(expected, 2)) < 0.05
