@@ -1,5 +1,6 @@
 import logging
 import math
+import re
 import torch
 import numpy as np
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
@@ -11,6 +12,13 @@ logger = logging.getLogger(__name__)
 # ── Input validation constants ───────────────────────────────────────────────
 MIN_TOKENS = 5       # GPT-2 needs at least a few tokens to compute a loss
 MAX_CHARS  = 8000    # ~2 048 GPT-2 tokens; avoids OOM on long inputs
+MIN_SENTENCE_CHARS = 10  # shorter fragments give unstable perplexity
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split text into sentences on . ! ? and drop very short fragments."""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [p.strip() for p in parts if p and len(p.strip()) > MIN_SENTENCE_CHARS]
 
 
 class AIDetector:
@@ -79,30 +87,35 @@ class AIDetector:
         ppl = torch.exp(torch.stack(nlls).mean())
         return ppl.item()
 
-    def calculate_burstiness(self, text: str) -> float:
+    def score_sentences(self, text: str) -> list[dict]:
+        """
+        Perplexity for each sentence, in order.
+        Sentences that can't be scored (too short for GPT-2) are skipped.
+
+        Returns: [{"text": str, "perplexity": float}, ...]
+        """
+        scored = []
+        for sentence in split_sentences(text):
+            try:
+                ppl = self.calculate_perplexity(sentence)
+                scored.append({"text": sentence, "perplexity": round(ppl, 2)})
+            except (ValueError, RuntimeError) as exc:
+                # Short sentence can't be scored — skip, don't crash
+                logger.debug("Skipping sentence (%s): %r", exc, sentence[:40])
+        return scored
+
+    def calculate_burstiness(self, text: str, sentence_scores: list[dict] | None = None) -> float:
         """
         Calculates burstiness (std-dev of sentence-level perplexities).
         Higher burstiness = more varied sentence complexity = more human.
+        Pass sentence_scores to reuse an earlier score_sentences() result.
         """
-        sentences = [s.strip() for s in text.split(".") if len(s.strip()) > 10]
-        if not sentences:
-            logger.debug("No sentences found for burstiness; returning 0.")
-            return 0.0
-
-        ppl_scores = []
-        for sentence in sentences:
-            try:
-                ppl = self.calculate_perplexity(sentence)
-                ppl_scores.append(ppl)
-            except (ValueError, RuntimeError) as exc:
-                # Short sentence can't be scored — skip, don't crash
-                logger.debug("Skipping sentence for burstiness (%s): %r", exc, sentence[:40])
-
-        if not ppl_scores:
+        if sentence_scores is None:
+            sentence_scores = self.score_sentences(text)
+        if not sentence_scores:
             logger.debug("No sentences could be scored; burstiness = 0.")
             return 0.0
-
-        return float(np.std(ppl_scores))
+        return float(np.std([s["perplexity"] for s in sentence_scores]))
 
     def analyze(self, text: str) -> dict:
         """
@@ -113,7 +126,8 @@ class AIDetector:
             {
                 "perplexity": float,
                 "burstiness": float,
-                "ai_score":   int,   # 0 = human, 100 = AI
+                "ai_score":   int,   # 0 = few AI-like signals, 100 = strong signals
+                "sentences":  [{"text": str, "perplexity": float}, ...],
             }
 
         Raises:
@@ -122,8 +136,9 @@ class AIDetector:
         """
         self._validate(text)
 
-        ppl       = self.calculate_perplexity(text)
-        burstiness = self.calculate_burstiness(text)
+        ppl        = self.calculate_perplexity(text)
+        sentences  = self.score_sentences(text)
+        burstiness = self.calculate_burstiness(text, sentence_scores=sentences)
 
         logger.info(
             "Analysis complete — perplexity=%.2f  burstiness=%.2f",
@@ -147,4 +162,5 @@ class AIDetector:
             "perplexity": round(ppl, 2),
             "burstiness": round(burstiness, 2),
             "ai_score":   min(ai_score, 100),
+            "sentences":  sentences,
         }

@@ -2,7 +2,7 @@
 #
 # Stages:
 #   1. deps   — install Python packages (cached layer)
-#   2. final  — copy source, download NLTK data, expose port
+#   2. final  — copy source, expose port
 #
 # The GPT-2 model (~500 MB) is downloaded from Hugging Face on first run and
 # cached in a Docker volume (see docker-compose.yml) so it isn't re-downloaded
@@ -33,12 +33,6 @@ WORKDIR /app
 COPY agent/     ./agent/
 COPY backend/   ./backend/
 COPY logic/     ./logic/
-
-# Pre-download NLTK data so the container doesn't need outbound internet at runtime.
-# wordnet is used by humanizer.py; punkt + averaged_perceptron_tagger are optional.
-RUN python -c "import nltk; nltk.download('wordnet', quiet=True); \
-               nltk.download('averaged_perceptron_tagger', quiet=True); \
-               nltk.download('punkt', quiet=True)"
 
 # Expose FastAPI port
 EXPOSE 8000

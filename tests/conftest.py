@@ -1,5 +1,5 @@
 """
-conftest.py — shared fixtures for the entire StealthText test suite.
+conftest.py — shared fixtures for the entire WriteLens test suite.
 """
 import pytest
 
