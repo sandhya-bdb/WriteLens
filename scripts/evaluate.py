@@ -90,8 +90,8 @@ def to_markdown(result: dict) -> str:
     ]
     for name, m in result["thresholds"].items():
         lines.append(
-            f"| {name} | {m['accuracy']:.0%} | {m['precision']:.0%} | "
-            f"{m['recall']:.0%} | {m['false_positive_rate']:.0%} |"
+            f"| {name} | {m['accuracy']:.1%} | {m['precision']:.1%} | "
+            f"{m['recall']:.1%} | {m['false_positive_rate']:.1%} ({m['fp']} of {m['fp'] + m['tn']}) |"
         )
     lines.append("")
     lines.append("Signal level distribution:")

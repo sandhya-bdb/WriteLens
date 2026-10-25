@@ -44,4 +44,5 @@ class TestMetrics:
             "signal_levels": {"human": {"Few AI-like signals": 1}, "chatgpt": {"Strong AI-like signals": 1}},
         }
         md = to_markdown(result)
-        assert "| strong (>=70) | 100% |" in md
+        assert "| strong (>=70) | 100.0% |" in md
+        assert "(0 of 1)" in md
